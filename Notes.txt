@@ -1,0 +1,15 @@
+7/17/24 - First time running with checkpoints implemented for resume training.
+This code implements a reinforcement learning (RL) based trading bot using an Actor-Critic architecture. It's a good starting point for building an autonomous trading system, but there are several areas for improvement and potential issues to address.
+
+Clear Structure: The code is well-organized with a CustomEnv class encapsulating the trading environment and separate functions for training, testing, and random games.
+Actor-Critic Model: The choice of Actor-Critic is suitable for continuous action spaces and can learn both policy (Actor) and value (Critic) functions.
+Technical Indicators: The inclusion of MACD, signal line, and RSI indicators provides valuable market context for decision-making.
+TensorBoard Integration: Using TensorBoard allows for effective monitoring of training progress and loss visualization.
+Checkpointing: The checkpoint_interval parameter enables saving model progress during training, which is crucial for long training runs.
+State Representation: The current state representation combines market history and order history. Consider exploring more sophisticated state representations that capture additional market dynamics, such as order book data, news sentiment, or social media trends.
+Reward Function: The reward function is simply the difference in net worth. This might lead to short-term profit maximization without considering risk or long-term portfolio growth. Explore more comprehensive reward functions that incorporate risk measures (e.g., Sharpe ratio, drawdown) and encourage long-term profitability.
+Action Space: The action space is limited to hold, buy, or sell with 100% allocation. A more realistic approach would involve a continuous action space representing the percentage of the portfolio to allocate to each action.
+Hyperparameter Tuning: The learning rate, epochs, and other hyperparameters are fixed. Experiment with different values and optimization techniques (e.g., grid search, Bayesian optimization) to find optimal settings.
+Overfitting: The model might overfit to the training data. Implement regularization techniques (e.g., dropout, L2 regularization) and consider using a validation set to monitor generalization performance.
+Transaction Costs: The current implementation doesn't account for transaction costs, which can significantly impact profitability in real-world trading.
+Market Dynamics: The environment assumes a random price between open and close for each step. Real markets exhibit more
