@@ -176,9 +176,10 @@ class CustomEnv:
             Volume = self.df.loc[self.current_step, 'Volume']
             MACD = self.df.loc[self.current_step, 'MACD']
             signal = self.df.loc[self.current_step, 'Signal Line']
+            rsi = self.df.loc[self.current_step, 'rsi']
 
             # Render the environment to the screen
-            self.visualization.render(Date, Open, High, Low, Close, Volume, MACD, signal, self.net_worth, self.trades)
+            self.visualization.render(Date, Open, High, Low, Close, Volume, MACD, signal, rsi, self.net_worth, self.trades)
 
     def get_gaes(self, rewards, dones, values, next_values, gamma = 0.99, lamda = 0.95, normalize=True):
         deltas = [r + gamma * (1 - d) * nv - v for r, d, nv, v in zip(rewards, dones, next_values, values)]
@@ -336,7 +337,7 @@ def Play_games(env, visualize):
     print(f'average net_worth: {average_net_worth}')
 
 # Download the historic prices of the asset
-df = yf.download("BTC-USD", start="2022-06-01", end=date.today())
+df = yf.download("ETH-USD", start="2022-06-01", end=date.today())
 
 # Calculate the MACD and signal line indicators
 # Calculate the short term exponentioal moving average (EMA)

@@ -21,6 +21,18 @@ if len(gpus) > 0:
     except RuntimeError: pass
 
 class Actor_Model:
+    """
+    Initializes an Actor_Model object with the given input shape, action space, learning rate, and optimizer.
+
+    Parameters:
+        input_shape (tuple): The shape of the input data.
+        action_space (int): The number of possible actions.
+        lr (float): The learning rate.
+        optimizer (tf.keras.optimizers.Optimizer): The optimizer to use for training.
+
+    Returns:
+        None
+    """
     def __init__(self, input_shape, action_space, lr, optimizer):
         X_input = Input(input_shape)
         self.action_space = action_space
@@ -34,6 +46,16 @@ class Actor_Model:
         self.Actor = Model(inputs = X_input, outputs = output)
         self.Actor.compile(loss=self.ppo_loss, optimizer=optimizer(learning_rate=lr))
 
+        """
+        Initializes an Actor_Model object with the given input shape, action space, learning rate, and optimizer.
+        
+        Parameters:
+            y_true (tensor): The true values.
+            y_pred (tensor): The predicted values.
+            
+        Returns:
+            total_loss (tensor): The calculated total loss.
+        """
     def ppo_loss(self, y_true, y_pred):
         # Defined in https://arxiv.org/abs/1707.06347
         advantages, prediction_picks, actions = y_true[:, :1], y_true[:, 1:1+self.action_space], y_true[:, 1+self.action_space:]
@@ -60,12 +82,38 @@ class Actor_Model:
 
         return total_loss
 
+        """
+        Save the model checkpoint to the specified path.
+
+        Args:
+            checkpoint_path (str, optional): The path where the checkpoint will be saved. Defaults to "Crypto_trader_checkpoint".
+
+        Returns:
+            None
+        """
     def save(self, checkpoint_path="Crypto_trader_checkpoint"):
         # Create a checkpoint object
         checkpoint = tf.train.Checkpoint(model=self.Actor) 
         # Save the checkpoint
         checkpoint.save(file_prefix=checkpoint_path)
 
+        """
+        Load the model checkpoint from the specified path.
+
+        Args:
+            checkpoint_path (str, optional): The path where the checkpoint is saved. Defaults to "Crypto_trader_checkpoint".
+
+        Returns:
+            None
+
+        Raises:
+            None
+
+        This function creates a checkpoint object using the `tf.train.Checkpoint` class and saves it with the specified model.
+        It then restores the latest checkpoint from the specified path using the `tf.train.latest_checkpoint` function.
+        If a checkpoint is found, it is restored and a message is printed indicating the checkpoint loaded.
+        If no checkpoint is found, a message is printed indicating that no checkpoint was found.
+        """
     def load(self, checkpoint_path="Crypto_trader_checkpoint"):
         # Create a checkpoint object
         checkpoint = tf.train.Checkpoint(model=self.Actor)
