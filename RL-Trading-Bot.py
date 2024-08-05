@@ -174,9 +174,11 @@ class CustomEnv:
             High = self.df.loc[self.current_step, 'High']
             Low = self.df.loc[self.current_step, 'Low']
             Volume = self.df.loc[self.current_step, 'Volume']
+            MACD = self.df.loc[self.current_step, 'MACD']
+            signal = self.df.loc[self.current_step, 'Signal Line']
 
             # Render the environment to the screen
-            self.visualization.render(Date, Open, High, Low, Close, Volume, self.net_worth, self.trades)
+            self.visualization.render(Date, Open, High, Low, Close, Volume, MACD, signal, self.net_worth, self.trades)
 
     def get_gaes(self, rewards, dones, values, next_values, gamma = 0.99, lamda = 0.95, normalize=True):
         deltas = [r + gamma * (1 - d) * nv - v for r, d, nv, v in zip(rewards, dones, next_values, values)]
@@ -318,8 +320,23 @@ def resume_training(env, visualize=False, train_episodes=50, training_batch_size
     env.Critic.load(checkpoint_path)
     train_agent(env, visualize, train_episodes, training_batch_size)
 
+def Play_games(env, visualize):
+    average_net_worth = 0
+    state = env.reset()
+    # while True:
+    env.render(visualize)
+    action, prediction = env.act(state)
+    state, reward, done = env.step(action)
+    # if env.current_step == env.end_step:
+    average_net_worth += env.net_worth
+    # print("net_worth:", env.net_worth)
+    # break
+
+    # print("average_net_worth:", average_net_worth/train_episodes)
+    print(f'average net_worth: {average_net_worth}')
+
 # Download the historic prices of the asset
-df = yf.download("BTC-USD", start="2020-06-01", end=date.today())
+df = yf.download("BTC-USD", start="2022-06-01", end=date.today())
 
 # Calculate the MACD and signal line indicators
 # Calculate the short term exponentioal moving average (EMA)
@@ -344,11 +361,16 @@ df['rsi'] = pta.rsi(df['Adj Close'], 2)
 lookback_window_size = 10
 train_df = df[:-720-lookback_window_size]
 test_df = df[-720-lookback_window_size:] # 30 days
+prod_df = df[:-1]
+
+print(prod_df.head())
 
 train_env = CustomEnv(train_df, lookback_window_size=lookback_window_size)
 test_env = CustomEnv(test_df, lookback_window_size=lookback_window_size)
+prod_env = CustomEnv(prod_df, lookback_window_size=1)
 
 # train_agent(train_env, visualize=False, train_episodes=2000, training_batch_size=100)
 # resume_training(train_env, visualize=False, train_episodes=100, training_batch_size=100, checkpoint_path="Crypto_trader_checkpoint")
-test_agent(test_env, visualize=False, test_episodes=100)
+test_agent(test_env, visualize=True, test_episodes=5)
 # Random_games(train_env, visualize =False, train_episodes = 1000)
+# Play_games(prod_env, visualize=True)

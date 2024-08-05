@@ -28,12 +28,14 @@ def Write_to_file(Date, net_worth, filename='{}.txt'.format(datetime.now().strft
 
 class TradingGraph:
     # A crypto trading visualization using matplotlib made to render custom prices which come in following way:
-    # Date, Open, High, Low, Close, Volume, net_worth, trades
+    # Date, Open, High, Low, Close, Volume, MACD, signalnet_worth, trades
     # call render every step
     def __init__(self, Render_range):
         self.Volume = deque(maxlen=Render_range)
         self.net_worth = deque(maxlen=Render_range)
         self.render_data = deque(maxlen=Render_range)
+        self.MACD = deque(maxlen=Render_range)
+        self.signal = deque(maxlen=Render_range)
         self.Render_range = Render_range
 
         # We are using the style ‘ggplot’
@@ -41,14 +43,17 @@ class TradingGraph:
         # close all plots if there are open
         plt.close('all')
         # figsize attribute allows us to specify the width and height of a figure in unit inches
-        self.fig = plt.figure(figsize=(16,8)) 
+        self.fig = plt.figure(figsize=(20,16)) 
 
         # Create top subplot for price axis
         self.ax1 = plt.subplot2grid((6,1), (0,0), rowspan=5, colspan=1)
         
         # Create bottom subplot for volume which shares its x-axis
-        self.ax2 = plt.subplot2grid((6,1), (5,0), rowspan=1, colspan=1, sharex=self.ax1)
-        
+        self.ax2 = plt.subplot2grid((6,1), (4,0), rowspan=1, colspan=1, sharex=self.ax1)
+
+        # Create lower subplot for MACD and signal
+        self.ax4 = plt. subplot2grid((6,1), (5,0), rowspan=1, colspan=1, sharex=self.ax1)
+
         # Create a new axis for net worth which shares its x-axis with price
         self.ax3 = self.ax1.twinx()
 
@@ -60,10 +65,12 @@ class TradingGraph:
         #plt.subplots_adjust(left=0.07, bottom=-0.1, right=0.93, top=0.97, wspace=0, hspace=0)
 
     # Render the environment to the screen
-    def render(self, Date, Open, High, Low, Close, Volume, net_worth, trades):
+    def render(self, Date, Open, High, Low, Close, Volume, MACD, signal, net_worth, trades):
         # append volume and net_worth to deque list
         self.Volume.append(Volume)
         self.net_worth.append(net_worth)
+        self.MACD.append(MACD)
+        self.signal.append(signal)
 
         # before appending to deque list, need to convert Date to special format
         Date = mpl_dates.date2num([pd.to_datetime(Date)])[0]
@@ -77,6 +84,11 @@ class TradingGraph:
         Date_Render_range = [i[0] for i in self.render_data]
         self.ax2.clear()
         self.ax2.fill_between(Date_Render_range, self.Volume, 0)
+
+        # Fill ax4 sublot with MACD
+        self.ax4.clear()
+        self.ax4.plot(Date_Render_range, self.MACD, color="blue")
+        self.ax4.plot(Date_Render_range, self.signal, color="red")
 
         # draw our net_worth graph on ax3 (shared with ax1) subplot
         self.ax3.clear()
