@@ -11,7 +11,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense, Flatten
 from tensorflow.keras import backend as K
-tf.config.experimental_run_functions_eagerly(True) # used for debuging and development
+tf.config.run_functions_eagerly(True) # used for debuging and development
 #tf.compat.v1.disable_eager_execution() # usually using this for fastest performance
 
 gpus = tf.config.experimental.list_physical_devices('GPU')

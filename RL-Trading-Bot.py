@@ -9,12 +9,15 @@
 
 import pandas as pd
 import pandas_ta as pta
+import pandas_datareader as pdr
 import numpy as np
-import yfinance as yf
+import requests
+# import yfinance as yf
 from datetime import date
 import random
 from collections import deque
 import os
+import time
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import copy
 
@@ -24,6 +27,68 @@ from tensorflow.keras.optimizers import Adam, RMSprop
 from model import Actor_Model, Critic_Model
 from utils import TradingGraph, Write_to_file
 
+def getHistoricPrices(symbol, interval, start_date, end_date):
+# /*************   Codeium Command   *************/
+    """
+    Downloads the historical prices for a given ticker from Alpha Vantage.
+
+    Parameters
+    ----------
+    ticker : str
+        The ticker symbol for the stock.
+    start_date : str
+        The start date of the period to download data for.
+    end_date : str
+        The end date of the period to download data for.
+
+    Returns
+    -------
+    df : pd.DataFrame
+        A DataFrame containing the historical prices for the ticker.
+    """
+# /******  376acb66-dc69-40af-ac52-7a2fdbc2a532  *******/
+    url = 'https://www.alphavantage.co/query'
+    params = {
+        'function': 'TIME_SERIES_INTRADAY',
+        'symbol': symbol,
+        'interval': interval,
+        'apikey': 'KM0V1BLPYGTBC8EL',
+        'outputsize': 'full'
+    }
+    # Initialize an empty list to store the data
+    data_list = []
+
+    # Calculate the number of months between the start and end dates
+    start_year, start_month, _ = map(int, start_date.split('-'))
+    end_year, end_month, _ = map(int, end_date.split('-'))
+    num_months = (end_year - start_year) * 12 + (end_month - start_month)
+
+    # Loop through each month and retrieve the data
+    for i in range(num_months + 1):
+        # Calculate the start and end dates for the current month
+        current_year = start_year + (start_month + i - 1) // 12
+        current_month = (start_month + i - 1) % 12 + 1
+        current_start_date = f'{current_year}-{current_month:02}-01'
+        current_end_date = f'{current_year}-{current_month:02}-31'
+
+        # Update the parameters with the current month's dates
+        params['from_symbol_time'] = current_start_date
+        params['to_symbol_time'] = current_end_date
+
+        # Make the API request and retrieve the data
+        response = requests.get(url, params=params)
+        data = response.json()
+
+        # Convert the data to a Pandas DataFrame and append it to the list
+        df = pd.DataFrame(data['Time Series (60min)']).T
+        df.index = pd.to_datetime(df.index)
+        data_list.append(df)
+
+    # Concatenate the data from each month into a single DataFrame
+    data = pd.concat(data_list, ignore_index=True)
+
+    return data
+    
 class CustomEnv:
     # A custom Crypto trading environment
     def __init__(self, df, initial_balance=1000, lookback_window_size=50, Render_range = 100):
@@ -243,6 +308,139 @@ class CustomEnv:
         self.Actor.Actor.load_weights(f"{name}_Actor.weights.h5")
         self.Critic.Critic.load_weights(f"{name}_Critic.weights.h5")
 
+def getCurrentPrice(symbol):
+    """
+    Gets the current price of a cryptocurrency using Alpha Vantage API
+    
+    Parameters:
+    symbol (str): The cryptocurrency symbol (e.g., 'ETH')
+    
+    Returns:
+    float: Current price of the cryptocurrency
+    """
+    url = 'https://www.alphavantage.co/query'
+    params = {
+        'function': 'CRYPTO_QUOTE',
+        'symbol': symbol,
+        'market': 'USD',
+        'apikey': 'KM0V1BLPYGTBC8EL'
+    }
+    
+    try:
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        if 'Realtime Currency Exchange Rate' in data:
+            return float(data['Realtime Currency Exchange Rate']['5. Exchange Rate'])
+        else:
+            print("Error getting current price:", data.get('Note', 'Unknown error'))
+            return None
+    except Exception as e:
+        print(f"Error fetching current price: {str(e)}")
+        return None
+
+def check_trading_signals(df, current_price):
+    """
+    Check if current market conditions meet our trading criteria
+    
+    Parameters:
+    df (pd.DataFrame): DataFrame with our indicators
+    current_price (float): Current price of the asset
+    
+    Returns:
+    str: Trading signal ('buy', 'sell', or 'hold')
+    """
+    # Get the latest indicators
+    latest_macd = df['MACD'].iloc[-1]
+    latest_signal = df['Signal Line'].iloc[-1]
+    latest_rsi = df['rsi'].iloc[-1]
+    
+    # Trading conditions
+    # Buy conditions:
+    # 1. MACD crosses above Signal Line (bullish crossover)
+    # 2. RSI is below 70 (not overbought)
+    if latest_macd > latest_signal and latest_rsi < 70:
+        return 'buy'
+    
+    # Sell conditions:
+    # 1. MACD crosses below Signal Line (bearish crossover)
+    # 2. RSI is above 30 (not oversold)
+    elif latest_macd < latest_signal and latest_rsi > 30:
+        return 'sell'
+    
+    # If no conditions are met, hold
+    return 'hold'
+
+def live_trading(env, symbol='ETH', check_interval=60):
+    """
+    Performs live trading based on current market conditions
+    
+    Parameters:
+    env: CustomEnv instance
+    symbol (str): Trading symbol
+    check_interval (int): Seconds between each check
+    """
+    print(f"Starting live trading for {symbol}...")
+    
+    while True:
+        try:
+            # Get current price
+            current_price = getCurrentPrice(symbol)
+            if current_price is None:
+                print("Could not get current price. Waiting for next interval...")
+                time.sleep(check_interval)
+                continue
+            
+            # Update our DataFrame with the new price
+            new_row = pd.DataFrame({
+                'Close': [current_price],
+                'Adj Close': [current_price],
+                # Add other required columns with appropriate values
+            })
+            
+            # Update indicators
+            df = pd.concat([env.df, new_row])
+            
+            # Recalculate MACD
+            ShortEMA = df.Close.ewm(span=12, adjust=False).mean()
+            LongEMA = df.Close.ewm(span=26, adjust=False).mean()
+            df['MACD'] = ShortEMA - LongEMA
+            df['Signal Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
+            
+            # Recalculate RSI
+            df['rsi'] = pta.rsi(df['Adj Close'], 2)
+            
+            # Check trading signals
+            signal = check_trading_signals(df, current_price)
+            
+            # Execute trades based on signals
+            if signal == 'buy' and env.balance > 0:
+                print(f"Buy signal detected at price: ${current_price}")
+                # Execute buy using env.step()
+                action = 1  # buy action
+                obs, reward, done = env.step(action)
+                print(f"Executed buy. Balance: ${env.balance:.2f}, Crypto held: {env.crypto_held:.6f}")
+                
+            elif signal == 'sell' and env.crypto_held > 0:
+                print(f"Sell signal detected at price: ${current_price}")
+                # Execute sell using env.step()
+                action = 2  # sell action
+                obs, reward, done = env.step(action)
+                print(f"Executed sell. Balance: ${env.balance:.2f}, Crypto held: {env.crypto_held:.6f}")
+            
+            print(f"Current price: ${current_price:.2f}")
+            print(f"MACD: {df['MACD'].iloc[-1]:.6f}")
+            print(f"Signal Line: {df['Signal Line'].iloc[-1]:.6f}")
+            print(f"RSI: {df['rsi'].iloc[-1]:.2f}")
+            print("-" * 50)
+            
+            # Wait for next interval
+            time.sleep(check_interval)
+            
+        except Exception as e:
+            print(f"Error in live trading: {str(e)}")
+            time.sleep(check_interval)
+
 def Random_games(env, visualize, train_episodes = 50):
     average_net_worth = 0
     for episode in range(train_episodes):
@@ -337,7 +535,9 @@ def Play_games(env, visualize):
     print(f'average net_worth: {average_net_worth}')
 
 # Download the historic prices of the asset
-df = yf.download("ETH-USD", start="2022-06-01", end=date.today())
+# Alpha Vantage API key: KM0V1BLPYGTBC8EL
+# df = yf.download("ETH-USD", start="2022-12-01", end=date.today())
+df = getHistoricPrices("ETH",interval='60min', start_date="2022-12-01", end_date = date.today().strftime('%Y-%m-%d'))
 
 # Calculate the MACD and signal line indicators
 # Calculate the short term exponentioal moving average (EMA)
@@ -370,8 +570,8 @@ train_env = CustomEnv(train_df, lookback_window_size=lookback_window_size)
 test_env = CustomEnv(test_df, lookback_window_size=lookback_window_size)
 prod_env = CustomEnv(prod_df, lookback_window_size=1)
 
-# train_agent(train_env, visualize=False, train_episodes=2000, training_batch_size=100)
+train_agent(train_env, visualize=False, train_episodes=2000, training_batch_size=100)
 # resume_training(train_env, visualize=False, train_episodes=100, training_batch_size=100, checkpoint_path="Crypto_trader_checkpoint")
-test_agent(test_env, visualize=True, test_episodes=5)
+# test_agent(test_env, visualize=True, test_episodes=5)
 # Random_games(train_env, visualize =False, train_episodes = 1000)
 # Play_games(prod_env, visualize=True)
