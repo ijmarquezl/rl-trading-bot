@@ -1,4 +1,8 @@
 {
     "IDX.aI.enableInlineCompletion": true,
-    "IDX.aI.enableCodebaseIndexing": true
+    "IDX.aI.enableCodebaseIndexing": true,
+    "github.experimental.multipleAccounts": false,
+    "github.gitAuthentication": false,
+    "github.branchProtection": false,
+    "git.useIntegratedAskPass": false
 }
