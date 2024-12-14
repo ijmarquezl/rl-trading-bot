@@ -1,4 +1,15 @@
-#==================================================================
+def fetch_historical_prices(symbol, outputsize='full'):
+    ...
+    params = {
+        'function': 'DIGITAL_CURRENCY_DAILY',
+        'symbol': symbol,
+        'market': 'USD',
+        'apikey': 'VBSPQW1YJBWIFRGR',  # Using the API key from .env
+        'outputsize': outputsize  # Ensure this is set to 'full'
+    }
+    if 'Time Series (Digital Currency Daily)' in data:
+         print("API Response:", data)  # Print the full response for debugging
+         #==================================================================
 #
 #   File name   : RL-Crypto-Trading-Bot_1.py
 #   Author      : IvanML
@@ -7,101 +18,43 @@
 #
 #==================================================================
 
+import os
+import copy
+import random
+import numpy as np
 import pandas as pd
 import pandas_ta as pta
-import pandas_datareader as pdr
-import numpy as np
-import requests
-# import yfinance as yf
-from datetime import date
-import random
+import tensorflow as tf
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.layers import Input, Dense, Flatten, Conv1D, MaxPooling1D, Concatenate
 from collections import deque
-import os
 import time
+import sys
+from dotenv import load_dotenv
+import requests
+
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-import copy
 
 from tensorboardX import SummaryWriter
-from tensorflow.keras.optimizers import Adam, RMSprop
 
 from model import Actor_Model, Critic_Model
 from utils import TradingGraph, Write_to_file
+from CryptoTrading import CryptoDataProvider
 
-def getHistoricPrices(symbol, interval, start_date, end_date):
-# /*************   Codeium Command   *************/
-    """
-    Downloads the historical prices for a given ticker from Alpha Vantage.
-
-    Parameters
-    ----------
-    ticker : str
-        The ticker symbol for the stock.
-    start_date : str
-        The start date of the period to download data for.
-    end_date : str
-        The end date of the period to download data for.
-
-    Returns
-    -------
-    df : pd.DataFrame
-        A DataFrame containing the historical prices for the ticker.
-    """
-# /******  376acb66-dc69-40af-ac52-7a2fdbc2a532  *******/
-    url = 'https://www.alphavantage.co/query'
-    params = {
-        'function': 'TIME_SERIES_INTRADAY',
-        'symbol': symbol,
-        'interval': interval,
-        'apikey': 'KM0V1BLPYGTBC8EL',
-        'outputsize': 'full'
-    }
-    # Initialize an empty list to store the data
-    data_list = []
-
-    # Calculate the number of months between the start and end dates
-    start_year, start_month, _ = map(int, start_date.split('-'))
-    end_year, end_month, _ = map(int, end_date.split('-'))
-    num_months = (end_year - start_year) * 12 + (end_month - start_month)
-
-    # Loop through each month and retrieve the data
-    for i in range(num_months + 1):
-        # Calculate the start and end dates for the current month
-        current_year = start_year + (start_month + i - 1) // 12
-        current_month = (start_month + i - 1) % 12 + 1
-        current_start_date = f'{current_year}-{current_month:02}-01'
-        current_end_date = f'{current_year}-{current_month:02}-31'
-
-        # Update the parameters with the current month's dates
-        params['from_symbol_time'] = current_start_date
-        params['to_symbol_time'] = current_end_date
-
-        # Make the API request and retrieve the data
-        response = requests.get(url, params=params)
-        data = response.json()
-
-        # Convert the data to a Pandas DataFrame and append it to the list
-        df = pd.DataFrame(data['Time Series (60min)']).T
-        df.index = pd.to_datetime(df.index)
-        data_list.append(df)
-
-    # Concatenate the data from each month into a single DataFrame
-    data = pd.concat(data_list, ignore_index=True)
-
-    return data
-    
 class CustomEnv:
     # A custom Crypto trading environment
-    def __init__(self, df, initial_balance=1000, lookback_window_size=50, Render_range = 100):
+    def __init__(self, df, initial_balance=1000, lookback_window_size=50, Render_range=100):
         self.df = df.dropna().reset_index()
-        self.df_total_steps = len(self.df)-1
+        self.df_total_steps = len(self.df) - 1
         self.initial_balance = initial_balance
         self.lookback_window_size = lookback_window_size
-        self.Render_range = Render_range # render range in visualization
+        self.Render_range = Render_range  # render range in visualization
         
         # Action space from 0 to 2, 0 is hold, 1 is buy, 2 is sell
         self.action_space = np.array([0, 1, 2])
 
-        # Orders history contains the balance, net_worth, crypto_bought, crypto_held values for the last lookback_window_size types
+        # Orders history contains the balance, net_worth, crypto_bought, crypto_sold values for the last lookback_window_size types
         self.orders_history = deque(maxlen=self.lookback_window_size)
 
         # Market history contains the OHCL values for the last lookback_window_size prices
@@ -110,15 +63,15 @@ class CustomEnv:
         # State size contains Market+Orders history for the last lookback_window_size steps
         self.state_size = (self.lookback_window_size, 12)
 
-        # Neural Networks part bellow
+        # Neural Networks part below
         self.lr = 0.00001
         self.epochs = 1
         self.normalize_value = 100000
         self.optimizer = Adam
 
         # Create Actor-Critic network model
-        self.Actor = Actor_Model(input_shape=self.state_size, action_space = self.action_space.shape[0], lr=self.lr, optimizer = self.optimizer)
-        self.Critic = Critic_Model(input_shape=self.state_size, action_space = self.action_space.shape[0], lr=self.lr, optimizer = self.optimizer)
+        self.Actor = Actor_Model(input_shape=self.state_size, action_space=self.action_space.shape[0], lr=self.lr, optimizer=self.optimizer)
+        self.Critic = Critic_Model(input_shape=self.state_size, action_space=self.action_space.shape[0], lr=self.lr, optimizer=self.optimizer)
 
     # create tensorboard writer
     def create_writer(self):
@@ -126,9 +79,9 @@ class CustomEnv:
         self.writer = SummaryWriter(comment="Crypto_trader")
 
     # Reset the state of the environment to an initial state
-    def reset(self, env_steps_size = 0):
-        self.visualization = TradingGraph(Render_range=self.Render_range) # init visualization
-        self.trades = deque(maxlen=self.Render_range) # limited orders memory for visualization
+    def reset(self, env_steps_size=0):
+        self.visualization = TradingGraph(Render_range=self.Render_range)  # init visualization
+        self.trades = deque(maxlen=self.Render_range)  # limited orders memory for visualization
 
         self.balance = self.initial_balance
         self.net_worth = self.initial_balance
@@ -136,13 +89,13 @@ class CustomEnv:
         self.crypto_held = 0
         self.crypto_sold = 0
         self.crypto_bought = 0
-        self.episode_orders = 0 # test
+        self.episode_orders = 0  # test
         self.env_steps_size = env_steps_size
 
-        if env_steps_size > 0: # used for training dataset
+        if env_steps_size > 0:  # used for training dataset
             self.start_step = random.randint(self.lookback_window_size, self.df_total_steps - env_steps_size)
             self.end_step = self.start_step + env_steps_size
-        else: # used for testing dataset
+        else:  # used for testing dataset
             self.start_step = self.lookback_window_size
             self.end_step = self.df_total_steps
 
@@ -187,14 +140,14 @@ class CustomEnv:
         current_price = random.uniform(
             self.df.loc[self.current_step, 'Open'],
             self.df.loc[self.current_step, 'Close'])
-        Date = self.df.loc[self.current_step, 'Date'] # for visualization
-        High = self.df.loc[self.current_step, 'High'] # for visualization
-        Low = self.df.loc[self.current_step, 'Low'] # for visualization
-        MACD = self.df.loc[self.current_step, 'MACD'] # for visualization
-        signal = self.df.loc[self.current_step, 'Signal Line'] # for visualization
-        RSI = self.df.loc[self.current_step, 'rsi'] # for visualization
+        Date = self.df.loc[self.current_step, 'Date']  # for visualization
+        High = self.df.loc[self.current_step, 'High']  # for visualization
+        Low = self.df.loc[self.current_step, 'Low']  # for visualization
+        MACD = self.df.loc[self.current_step, 'MACD']  # for visualization
+        signal = self.df.loc[self.current_step, 'Signal Line']  # for visualization
+        RSI = self.df.loc[self.current_step, 'rsi']  # for visualization
 
-        if action == 0: # Hold
+        if action == 0:  # Hold
             pass
 
         elif action == 1 and self.balance > 0:
@@ -202,15 +155,15 @@ class CustomEnv:
             self.crypto_bought = self.balance / current_price
             self.balance -= self.crypto_bought * current_price
             self.crypto_held += self.crypto_bought
-            self.trades.append({'Date' : Date, 'High' : High, 'Low' : Low, 'MACD' : MACD, 'Signal Line' : signal, 'RSI' : RSI, 'total': self.crypto_bought, 'type' : "buy"})
+            self.trades.append({'Date': Date, 'High': High, 'Low': Low, 'MACD': MACD, 'Signal Line': signal, 'RSI': RSI, 'total': self.crypto_bought, 'type': "buy"})
             self.episode_orders += 1
 
         elif action == 2 and self.crypto_held > 0:
-            # Sell 100% of current cyrpto held
+            # Sell 100% of current crypto held
             self.crypto_sold = self.crypto_held
             self.balance += self.crypto_sold * current_price
             self.crypto_held -= self.crypto_sold
-            self.trades.append({'Date' : Date, 'High' : High, 'Low' : Low, 'MACD' : MACD, 'Signal Line' : signal, 'RSI' : RSI, 'total': self.crypto_sold, 'type' : "sell"})
+            self.trades.append({'Date': Date, 'High': High, 'Low': Low, 'MACD': MACD, 'Signal Line': signal, 'RSI': RSI, 'total': self.crypto_sold, 'type': "sell"})
             self.episode_orders += 1
 
         self.prev_net_worth = self.net_worth
@@ -246,7 +199,7 @@ class CustomEnv:
             # Render the environment to the screen
             self.visualization.render(Date, Open, High, Low, Close, Volume, MACD, signal, rsi, self.net_worth, self.trades)
 
-    def get_gaes(self, rewards, dones, values, next_values, gamma = 0.99, lamda = 0.95, normalize=True):
+    def get_gaes(self, rewards, dones, values, next_values, gamma=0.99, lamda=0.95, normalize=True):
         deltas = [r + gamma * (1 - d) * nv - v for r, d, nv, v in zip(rewards, dones, next_values, values)]
         deltas = np.stack(deltas)
         gaes = copy.deepcopy(deltas)
@@ -266,21 +219,14 @@ class CustomEnv:
         predictions = np.vstack(predictions)
 
         # Compute discounted rewards
-        #discounted_r = np.vstack(self.discount_rewards(rewards))
+        # discounted_r = np.vstack(self.discount_rewards(rewards))
 
         # Get Critic network predictions 
         values = self.Critic.predict(states)
         next_values = self.Critic.predict(next_states)
         # Compute advantages
-        #advantages = discounted_r - values
+        # advantages = discounted_r - values
         advantages, target = self.get_gaes(rewards, dones, np.squeeze(values), np.squeeze(next_values))
-        '''
-        pylab.plot(target,'-')
-        pylab.plot(advantages,'.')
-        ax=pylab.gca()
-        ax.grid(True)
-        pylab.show()
-        '''
         # stack everything to numpy array
         y_true = np.hstack([advantages, predictions, actions])
         
@@ -308,6 +254,122 @@ class CustomEnv:
         self.Actor.Actor.load_weights(f"{name}_Actor.weights.h5")
         self.Critic.Critic.load_weights(f"{name}_Critic.weights.h5")
 
+def load_or_fetch_data(symbol, cache_file='data/eth_historical.csv'):
+    """
+    Loads data from cache if available and recent, otherwise fetches from API.
+    Updates cache with new data.
+    
+    Parameters
+    ----------
+    symbol : str
+        The cryptocurrency symbol (e.g., 'ETH')
+    cache_file : str
+        Path to the cache file
+        
+    Returns
+    -------
+    df : pd.DataFrame
+        Historical price data
+    """
+    try:
+        # Create data directory if it doesn't exist
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        
+        current_date = pd.Timestamp.now()
+        cache_exists = os.path.exists(cache_file)
+        should_fetch_new = True
+        
+        if cache_exists:
+            # Load cached data
+            cached_df = pd.read_csv(cache_file)
+            cached_df['Date'] = pd.to_datetime(cached_df['Date'])
+            cached_df.set_index('Date', inplace=True)
+            
+            if len(cached_df) > 0:
+                last_date = cached_df.index[-1]
+                # If cache is recent (less than 1 day old), use it
+                if (current_date - last_date).days < 1:
+                    print(f"Using cached data (last updated: {last_date})")
+                    should_fetch_new = False
+                    return cached_df
+                else:
+                    print(f"Cache is outdated (last updated: {last_date})")
+        
+        if should_fetch_new:
+            print("Fetching new data from Alpha Vantage...")
+            new_df = fetch_historical_prices(symbol)
+            
+            if new_df is not None and len(new_df) > 0:
+                # Save to cache
+                new_df.index.name = 'Date'
+                new_df.to_csv(cache_file)
+                print(f"Data cached successfully to {cache_file}")
+                return new_df
+            else:
+                if cache_exists:
+                    print("Failed to fetch new data, using cached data instead")
+                    return cached_df
+                else:
+                    raise ValueError("Failed to fetch data and no cache available")
+                    
+    except Exception as e:
+        print(f"Error in load_or_fetch_data: {e}")
+        if cache_exists:
+            print("Using cached data due to error")
+            return pd.read_csv(cache_file, index_col='Date', parse_dates=True)
+        raise
+
+    # Print the columns of the DataFrame to diagnose the KeyError
+    print(f'DataFrame columns: {df.columns.tolist()}')
+
+    return df
+
+def fetch_historical_prices(symbol, outputsize='full'):
+    csv_file = f'{symbol}_historical_prices.csv'
+    # Check if the CSV file exists
+    if os.path.exists(csv_file):
+        # Load existing data
+        df = pd.read_csv(csv_file, index_col='Date', parse_dates=True)
+        last_date = df.index[-1]
+        print(f'Existing data found. Last date in data: {last_date}')
+    else:
+        df = pd.DataFrame()
+        last_date = None
+        print('No existing data found. Fetching full historical data.')
+
+    # Fetch new data only if necessary
+    if last_date is None or last_date < pd.Timestamp.now() - pd.DateOffset(days=1):
+        url = 'https://www.alphavantage.co/query'
+        params = {
+            'function': 'DIGITAL_CURRENCY_DAILY',
+            'symbol': symbol,
+            'market': 'USD',
+            'apikey': 'VBSPQW1YJBWIFRGR',  # Using the API key from .env
+            'outputsize': 'compact'
+        }
+        try:
+            response = requests.get(url, params=params)
+            data = response.json()
+            if 'Time Series (Digital Currency Daily)' in data:
+                new_data = pd.DataFrame(data['Time Series (Digital Currency Daily)']).T
+                new_data.columns = ['1a. open (USD)', '2a. high (USD)', '3a. low (USD)', '4a. close (USD)', '5. volume', '6. market cap (USD)']
+                new_data.index = pd.to_datetime(new_data.index)
+                new_data = new_data.astype(float)
+                # Combine with existing data
+                df = pd.concat([df, new_data])
+                df = df[~df.index.duplicated(keep='last')]  # Remove duplicates if any
+                df.to_csv(csv_file)
+                print(f'Updated data saved to {csv_file}')
+            else:
+                print('Error fetching data:', data.get('Error Message', 'Unknown error'))
+        except Exception as e:
+            print(f'Error fetching historical prices: {str(e)}')
+            return None
+    else:
+        print('Data is up to date.')
+
+    return df
+
 def getCurrentPrice(symbol):
     """
     Gets the current price of a cryptocurrency using Alpha Vantage API
@@ -323,7 +385,7 @@ def getCurrentPrice(symbol):
         'function': 'CRYPTO_QUOTE',
         'symbol': symbol,
         'market': 'USD',
-        'apikey': 'KM0V1BLPYGTBC8EL'
+        'apikey': 'VBSPQW1YJBWIFRGR'  # Using the API key from .env
     }
     
     try:
@@ -393,7 +455,7 @@ def live_trading(env, symbol='ETH', check_interval=60):
             
             # Update our DataFrame with the new price
             new_row = pd.DataFrame({
-                'Close': [current_price],
+                '4a. close (USD)': [current_price],
                 'Adj Close': [current_price],
                 # Add other required columns with appropriate values
             })
@@ -402,8 +464,8 @@ def live_trading(env, symbol='ETH', check_interval=60):
             df = pd.concat([env.df, new_row])
             
             # Recalculate MACD
-            ShortEMA = df.Close.ewm(span=12, adjust=False).mean()
-            LongEMA = df.Close.ewm(span=26, adjust=False).mean()
+            ShortEMA = df['4a. close (USD)'].ewm(span=12, adjust=False).mean()
+            LongEMA = df['4a. close (USD)'].ewm(span=26, adjust=False).mean()
             df['MACD'] = ShortEMA - LongEMA
             df['Signal Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
             
@@ -457,7 +519,7 @@ def Random_games(env, visualize, train_episodes = 50):
     # print("average_net_worth:", average_net_worth/train_episodes)
     print(f'average {train_episodes} episodes random net_worth: {average_net_worth/train_episodes}')
 
-def train_agent(env, visualize=False, train_episodes=50, training_batch_size=500, checkpoint_interval=10):
+def train_agent(env, visualize=False, train_episodes=20, training_batch_size=4, checkpoint_interval=10):
     env.create_writer() # create TensorBoard writer
     total_average = deque(maxlen=100) # save recent 100 episodes net worth
     best_average = 0 # used to track best average net worth
@@ -534,44 +596,114 @@ def Play_games(env, visualize):
     # print("average_net_worth:", average_net_worth/train_episodes)
     print(f'average net_worth: {average_net_worth}')
 
+def create_actor_model(state_dim, action_dim):
+    """
+    Create an actor model for the reinforcement learning agent.
+    
+    Parameters
+    ----------
+    state_dim : int
+        Dimension of the input state
+    action_dim : int
+        Dimension of the action space
+    
+    Returns
+    -------
+    model : keras.Model
+        Compiled neural network model
+    """
+    model = Sequential([
+        Dense(64, activation='relu', input_dim=state_dim),
+        Dense(32, activation='relu'),
+        Dense(action_dim, activation='tanh')
+    ])
+    model.compile(loss='mse', optimizer=Adam(learning_rate=0.001))
+    return model
+
+def create_critic_model(state_dim, action_dim):
+    """
+    Create a critic model for the reinforcement learning agent.
+    
+    Parameters
+    ----------
+    state_dim : int
+        Dimension of the input state
+    action_dim : int
+        Dimension of the action space
+    
+    Returns
+    -------
+    model : keras.Model
+        Compiled neural network model
+    """
+    state_input = Input(shape=(state_dim,))
+    action_input = Input(shape=(action_dim,))
+    
+    x = Dense(64, activation='relu')(state_input)
+    x = Concatenate()([x, action_input])
+    x = Dense(32, activation='relu')(x)
+    output = Dense(1)(x)
+    
+    model = Model([state_input, action_input], output)
+    model.compile(loss='mse', optimizer=Adam(learning_rate=0.001))
+    return model
+
 # Download the historic prices of the asset
-# Alpha Vantage API key: KM0V1BLPYGTBC8EL
-# df = yf.download("ETH-USD", start="2022-12-01", end=date.today())
-df = getHistoricPrices("ETH",interval='60min', start_date="2022-12-01", end_date = date.today().strftime('%Y-%m-%d'))
+print("Downloading ETH historical data...")
+df = load_or_fetch_data('ETH')
 
-# Calculate the MACD and signal line indicators
-# Calculate the short term exponentioal moving average (EMA)
-ShortEMA = df.Close.ewm(span=12, adjust=False).mean()
+if df is None or len(df) == 0:
+    print("Failed to fetch data from Alpha Vantage. Check your API key and try again.")
+    sys.exit(1)
 
-# Calculate the long term exponential moving average (EMA)
-LongEMA = df.Close.ewm(span=26, adjust=False).mean()
+print(f"Successfully loaded {len(df)} days of ETH data")
+print(f"Date range: from {df.index[0]} to {df.index[-1]}")
 
-# Calculate the MACD line
-MACD = ShortEMA - LongEMA
+# Calculate technical indicators
+print("Calculating technical indicators...")
 
-# Calculate the signal line
+# Calculate MACD
+exp1 = df['4a. close (USD)'].ewm(span=12, adjust=False).mean()
+exp2 = df['4a. close (USD)'].ewm(span=26, adjust=False).mean()
+MACD = exp1 - exp2
 signal = MACD.ewm(span=9, adjust=False).mean()
 
-# Create new columns for the data
 df['MACD'] = MACD
 df['Signal Line'] = signal
 
-# Calculate the RSI for the asset
-df['rsi'] = pta.rsi(df['Adj Close'], 2)
+# Calculate RSI
+df['rsi'] = pta.rsi(df['4a. close (USD)'], 14)  # Using 14-day RSI
 
-lookback_window_size = 10
-train_df = df[:-720-lookback_window_size]
-test_df = df[-720-lookback_window_size:] # 30 days
-prod_df = df[:-1]
+# Drop any rows with NaN values
+df = df.dropna()
 
-print(prod_df.head())
+print("Total dataset size:", len(df))
 
-train_env = CustomEnv(train_df, lookback_window_size=lookback_window_size)
-test_env = CustomEnv(test_df, lookback_window_size=lookback_window_size)
-prod_env = CustomEnv(prod_df, lookback_window_size=1)
+# Split into training and testing sets
+lookback_window_size = 5  
+train_size = int(len(df) * 0.8)  # Use 80% for training
+train_df = df[:train_size]
+test_df = df[train_size-lookback_window_size:]  # Overlap by lookback_window_size to ensure continuity
 
-train_agent(train_env, visualize=False, train_episodes=2000, training_batch_size=100)
-# resume_training(train_env, visualize=False, train_episodes=100, training_batch_size=100, checkpoint_path="Crypto_trader_checkpoint")
-# test_agent(test_env, visualize=True, test_episodes=5)
-# Random_games(train_env, visualize =False, train_episodes = 1000)
-# Play_games(prod_env, visualize=True)
+print("Training set size:", len(train_df))
+print("Test set size:", len(test_df))
+
+# Dynamically calculate state and action dimensions
+state_dim = 5 * lookback_window_size + 4  # market history + portfolio info
+action_dim = 3  # Buy, Sell, Hold
+
+# Initialize environments with appropriate initial balance for ETH
+initial_balance = 1000  # Starting with $1000
+train_env = CustomEnv(train_df, lookback_window_size=lookback_window_size, initial_balance=initial_balance)
+test_env = CustomEnv(test_df, lookback_window_size=lookback_window_size, initial_balance=initial_balance)
+
+# Train the agent
+training_batch_size = 4    
+train_episodes = 20       
+
+print("\nStarting training...")
+train_agent(train_env, visualize=False, train_episodes=train_episodes, training_batch_size=training_batch_size)
+
+# Test the trained agent
+print("\nTesting the trained agent...")
+test_agent(test_env, visualize=True, test_episodes=10)

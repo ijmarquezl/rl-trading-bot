@@ -9,34 +9,15 @@ import pandas_ta as pta
 from datetime import datetime
 import time
 
-class CryptoTrader:
+class CryptoDataProvider:
+    """Base class for cryptocurrency data and trading operations"""
     def __init__(self):
         # Load environment variables
         load_dotenv()
-        
-        # Initialize Web3 and connect to Ethereum network
-        self.infura_url = f"https://mainnet.infura.io/v3/{os.getenv('INFURA_PROJECT_ID')}"
-        self.w3 = Web3(Web3.HTTPProvider(self.infura_url))
-        
-        # MetaMask wallet configuration
-        self.account_address = os.getenv('METAMASK_ADDRESS')
-        self.private_key = os.getenv('PRIVATE_KEY')
-        
-        # Alpha Vantage API configuration
         self.alpha_vantage_key = os.getenv('ALPHA_VANTAGE_KEY')
         
-        # Verify connection
-        if not self.w3.is_connected():
-            raise Exception("Failed to connect to Ethereum network")
-            
-        # Initialize price cache
-        self.price_cache = {}
-        self.last_update = None
-        
     def get_current_price(self, symbol):
-        """
-        Gets the current price of a cryptocurrency using Alpha Vantage API
-        """
+        """Gets the current price of a cryptocurrency using Alpha Vantage API"""
         url = 'https://www.alphavantage.co/query'
         params = {
             'function': 'CRYPTO_QUOTE',
@@ -59,9 +40,7 @@ class CryptoTrader:
             return None
             
     def get_historical_prices(self, symbol, interval='60min', start_date=None, end_date=None):
-        """
-        Gets historical price data for a cryptocurrency
-        """
+        """Gets historical price data for a cryptocurrency"""
         url = 'https://www.alphavantage.co/query'
         params = {
             'function': 'TIME_SERIES_INTRADAY',
@@ -82,9 +61,7 @@ class CryptoTrader:
             return None
             
     def calculate_indicators(self, df):
-        """
-        Calculates technical indicators (MACD and RSI)
-        """
+        """Calculates technical indicators (MACD and RSI)"""
         # Calculate MACD
         short_ema = df['Close'].ewm(span=12, adjust=False).mean()
         long_ema = df['Close'].ewm(span=26, adjust=False).mean()
@@ -97,9 +74,7 @@ class CryptoTrader:
         return df
         
     def check_trading_signals(self, df):
-        """
-        Analyzes current market conditions and returns trading signals
-        """
+        """Analyzes current market conditions and returns trading signals"""
         latest_macd = df['MACD'].iloc[-1]
         latest_signal = df['Signal_Line'].iloc[-1]
         latest_rsi = df['RSI'].iloc[-1]
@@ -110,11 +85,26 @@ class CryptoTrader:
         elif latest_macd < latest_signal and latest_rsi > 30:
             return 'sell'
         return 'hold'
+
+class CryptoTrader(CryptoDataProvider):
+    """Handles real-world trading operations with MetaMask integration"""
+    def __init__(self):
+        super().__init__()
         
+        # Initialize Web3 and connect to Ethereum network
+        self.infura_url = f"https://mainnet.infura.io/v3/{os.getenv('INFURA_PROJECT_ID')}"
+        self.w3 = Web3(Web3.HTTPProvider(self.infura_url))
+        
+        # MetaMask wallet configuration
+        self.account_address = os.getenv('METAMASK_ADDRESS')
+        self.private_key = os.getenv('PRIVATE_KEY')
+        
+        # Verify connection
+        if not self.w3.is_connected():
+            raise Exception("Failed to connect to Ethereum network")
+            
     def get_eth_balance(self):
-        """
-        Gets the ETH balance of the MetaMask wallet
-        """
+        """Gets the ETH balance of the MetaMask wallet"""
         try:
             balance_wei = self.w3.eth.get_balance(self.account_address)
             balance_eth = self.w3.from_wei(balance_wei, 'ether')
@@ -124,9 +114,7 @@ class CryptoTrader:
             return None
             
     def execute_trade(self, action, amount_eth, to_address=None):
-        """
-        Executes a trade using MetaMask wallet
-        """
+        """Executes a trade using MetaMask wallet"""
         try:
             if action not in ['buy', 'sell']:
                 raise ValueError("Invalid action. Must be 'buy' or 'sell'")
@@ -166,9 +154,7 @@ class CryptoTrader:
             return None
             
     def start_live_trading(self, symbol='ETH', check_interval=60):
-        """
-        Starts live trading with automatic signal detection and execution
-        """
+        """Starts live trading with automatic signal detection and execution"""
         print(f"Starting live trading for {symbol}...")
         
         while True:
@@ -211,10 +197,8 @@ class CryptoTrader:
             except Exception as e:
                 print(f"Error in live trading loop: {str(e)}")
                 time.sleep(check_interval)
-                
+
 if __name__ == "__main__":
     # Example usage
     trader = CryptoTrader()
-    
-    # Start live trading
     trader.start_live_trading(symbol='ETH', check_interval=60)

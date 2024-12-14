@@ -9,7 +9,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense, Flatten
+from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras import backend as K
 tf.config.run_functions_eagerly(True) # used for debuging and development
 #tf.compat.v1.disable_eager_execution() # usually using this for fastest performance
@@ -34,16 +34,19 @@ class Actor_Model:
         None
     """
     def __init__(self, input_shape, action_space, lr, optimizer):
+        # Ensure input_shape is a tuple
+        if not isinstance(input_shape, tuple):
+            input_shape = (input_shape,)
+
         X_input = Input(input_shape)
         self.action_space = action_space
 
-        X = Flatten(input_shape=input_shape)(X_input)
-        X = Dense(512, activation="relu")(X)
-        X = Dense(256, activation="relu")(X)
-        X = Dense(64, activation="relu")(X)
+        # Simplified network architecture to handle variable input sizes
+        X = Dense(64, activation="relu")(X_input)
+        X = Dense(32, activation="relu")(X)
         output = Dense(self.action_space, activation="softmax")(X)
 
-        self.Actor = Model(inputs = X_input, outputs = output)
+        self.Actor = Model(inputs=X_input, outputs=output)
         self.Actor.compile(loss=self.ppo_loss, optimizer=optimizer(learning_rate=lr))
 
         """
@@ -126,19 +129,30 @@ class Actor_Model:
             print("No checkpoint found.")
 
     def predict(self, state):
+        # Ensure state is a numpy array and has the correct shape
+        if not isinstance(state, np.ndarray):
+            state = np.array(state)
+        
+        # Add batch dimension if missing
+        if len(state.shape) == 1:
+            state = np.expand_dims(state, axis=0)
+        
         return self.Actor.predict(state)
 
 class Critic_Model:
     def __init__(self, input_shape, action_space, lr, optimizer):
+        # Ensure input_shape is a tuple
+        if not isinstance(input_shape, tuple):
+            input_shape = (input_shape,)
+
         X_input = Input(input_shape)
 
-        V = Flatten(input_shape=input_shape)(X_input)
-        V = Dense(512, activation="relu")(V)
-        V = Dense(256, activation="relu")(V)
-        V = Dense(64, activation="relu")(V)
+        # Simplified network architecture to handle variable input sizes
+        V = Dense(64, activation="relu")(X_input)
+        V = Dense(32, activation="relu")(V)
         value = Dense(1, activation=None)(V)
 
-        self.Critic = Model(inputs=X_input, outputs = value)
+        self.Critic = Model(inputs=X_input, outputs=value)
         self.Critic.compile(loss=self.critic_PPO2_loss, optimizer=optimizer(learning_rate=lr))
 
     def critic_PPO2_loss(self, y_true, y_pred):
@@ -163,5 +177,12 @@ class Critic_Model:
             print("No checkpoint found.")
 
     def predict(self, state):
-        # return self.Critic.predict([state, np.zeros((state.shape[0], 1))])
+        # Ensure state is a numpy array and has the correct shape
+        if not isinstance(state, np.ndarray):
+            state = np.array(state)
+        
+        # Add batch dimension if missing
+        if len(state.shape) == 1:
+            state = np.expand_dims(state, axis=0)
+        
         return self.Critic.predict(state)
